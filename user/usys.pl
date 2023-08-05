@@ -36,5 +36,5 @@ entry("getpid");
 entry("sbrk");
 entry("sleep");
 entry("uptime");
-entry("connect");
-entry("pgaccess");
+entry("trace");  # 添加存根
+entry("sysinfo"); # 添加存根
