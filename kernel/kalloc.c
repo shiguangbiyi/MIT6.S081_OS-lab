@@ -1,6 +1,4 @@
-// Physical memory allocator, for user processes,
-// kernel stacks, page-table pages,
-// and pipe buffers. Allocates whole 4096-byte pages.
+//物理内存分配器，用于用户进程、内核堆栈、页表页和管道缓冲区。分配整个4096字节的页面。
 
 #include "types.h"
 #include "param.h"
@@ -39,10 +37,7 @@ freerange(void *pa_start, void *pa_end)
     kfree(p);
 }
 
-// Free the page of physical memory pointed at by v,
-// which normally should have been returned by a
-// call to kalloc().  (The exception is when
-// initializing the allocator; see kinit above.)
+//释放v指向的物理内存页，该页通常应该由对kalloc（）的调用返回。（初始化分配器时出现异常；请参阅上面的kinit。）
 void
 kfree(void *pa)
 {
@@ -62,9 +57,7 @@ kfree(void *pa)
   release(&kmem.lock);
 }
 
-// Allocate one 4096-byte page of physical memory.
-// Returns a pointer that the kernel can use.
-// Returns 0 if the memory cannot be allocated.
+//分配一个4096字节的物理内存页。返回内核可以使用的指针。如果无法分配内存，则返回0。
 void *
 kalloc(void)
 {
@@ -79,4 +72,20 @@ kalloc(void)
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+}
+
+
+// 获取空闲内存的页数
+uint64 getfreemem()
+{
+  struct run *r;
+  uint64 count=0;
+  acquire(&kmem.lock);
+  r = kmem.freelist;
+  while(r){
+    r = r->next;
+    count++;
+  }
+  release(&kmem.lock);
+  return count*PGSIZE;
 }
