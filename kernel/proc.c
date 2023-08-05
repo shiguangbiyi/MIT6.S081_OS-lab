@@ -289,6 +289,8 @@ fork(void)
   }
   np->sz = p->sz;
 
+  np->parent = p;
+
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -303,16 +305,12 @@ fork(void)
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
+  np->mask = p->mask;
+
   pid = np->pid;
 
-  release(&np->lock);
-
-  acquire(&wait_lock);
-  np->parent = p;
-  release(&wait_lock);
-
-  acquire(&np->lock);
   np->state = RUNNABLE;
+
   release(&np->lock);
 
   return pid;
@@ -653,4 +651,18 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+uint64 getnproc()
+{
+  struct proc *p;
+  int count=0;
+
+  for(p=proc;p<&proc[NPROC];p++){
+    acquire(&p->lock);
+    if(p->state!=UNUSED)
+      count++;
+    release(&p->lock);
+  }
+  return count;
 }
