@@ -653,16 +653,32 @@ procdump(void)
   }
 }
 
-uint64 getnproc()
+// 获取活动进程的数量
+uint64
+getnproc()
 {
+  // 声明一个指向 struct proc 结构的指针 p，用于遍历进程列表
   struct proc *p;
-  int count=0;
 
-  for(p=proc;p<&proc[NPROC];p++){
+  // 声明一个整型变量 count，用于记录活动进程的数量，初始值为 0
+  int count = 0;
+
+  // 使用循环遍历整个进程列表
+  for (p = proc; p < &proc[NPROC]; p++)
+  {
+    // 获取当前进程的锁，以确保进程状态的一致性
     acquire(&p->lock);
-    if(p->state!=UNUSED)
+
+    // 如果当前进程的状态不是 UNUSED（即正在使用中的进程）
+    if (p->state != UNUSED)
+      // 将活动进程的数量增加 1
       count++;
+
+    // 释放当前进程的锁
     release(&p->lock);
   }
+
+  // 返回活动进程的数量
   return count;
 }
+
