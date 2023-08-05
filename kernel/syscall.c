@@ -83,6 +83,8 @@ argstr(int n, char *buf, int max)
   return fetchstr(addr, buf, max);
 }
 
+
+// 声明各个系统调用的函数原型
 extern uint64 sys_chdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_dup(void);
@@ -104,13 +106,11 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
-#ifdef LAB_NET
-extern uint64 sys_connect(void);
-#endif
-#ifdef LAB_PGTBL
-extern uint64 sys_pgaccess(void);
-#endif
+extern uint64 sys_trace(void);
+extern uint64 sys_sysinfo(void);
 
+
+// 通过系统调用号找到对应的系统调用函数
 static uint64 (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
 [SYS_exit]    sys_exit,
@@ -133,15 +133,35 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
-#ifdef LAB_NET
-[SYS_connect] sys_connect,
-#endif
-#ifdef LAB_PGTBL
-[SYS_pgaccess] sys_pgaccess,
-#endif
+[SYS_trace]   sys_trace,
+[SYS_sysinfo] sys_sysinfo,
 };
 
-
+char* syscalls_name[] = {
+[SYS_fork]    "fork",
+[SYS_exit]    "exit",
+[SYS_wait]    "wait",
+[SYS_pipe]    "pipe",
+[SYS_read]    "read",
+[SYS_kill]    "kill",
+[SYS_exec]    "exec",
+[SYS_fstat]   "fstat",
+[SYS_chdir]   "chdir",
+[SYS_dup]     "dup",
+[SYS_getpid]  "getpid",
+[SYS_sbrk]    "sbrk",
+[SYS_sleep]   "sleep",
+[SYS_uptime]  "uptime",
+[SYS_open]    "open",
+[SYS_write]   "write",
+[SYS_mknod]   "mknod",
+[SYS_unlink]  "unlink",
+[SYS_link]    "link",
+[SYS_mkdir]   "mkdir",
+[SYS_close]   "close",
+[SYS_trace]   "trace",
+[SYS_sysinfo] "sys_info",
+};
 
 void
 syscall(void)
@@ -150,11 +170,21 @@ syscall(void)
   struct proc *p = myproc();
 
   num = p->trapframe->a7;
+  // 判断系统调用号是否合法，必须满足以下三个条件
+  // 系统调用号大于0
+  // 小于系统调用数组syscalls的元素个数（NELEM(syscalls)）
+  // 对应的系统调用函数不为NULL（即已实现）
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
     p->trapframe->a0 = syscalls[num]();
-  } else {
-    printf("%d %s: unknown sys call %d\n",
-            p->pid, p->name, num);
-    p->trapframe->a0 = -1;
-  }
+
+    // 如果启用了系统调用跟踪（即在系统调用的掩码中），则输出跟踪信息。
+    // 打印当前进程的PID、执行的系统调用名称和调用结果。
+    if ((1 << num) & p->mask) {
+      printf("%d: syscall %s -> %d\n", p->pid, syscalls_name[num], p->trapframe->a0);
+    }
+    } else {
+      printf("%d %s: unknown sys call %d\n",
+              p->pid, p->name, num);
+      p->trapframe->a0 = -1;
+    }
 }
