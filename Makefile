@@ -1,56 +1,82 @@
+# 在xv6操作系统中，总文件夹下的Makefile是一个用于自动化构建系统的文件。
+# Makefile文件描述了如何编译和构建xv6操作系统内核以及用户程序。
+# 通过运行make命令，Makefile会根据定义的规则和依赖关系来编译源代码，并生成可执行文件和内核映像。
+# Makefile包含了一系列的规则，每个规则定义了如何生成一个目标文件。这些规则指定了目标文件的依赖关系和生成方式。
+# 当运行make命令时，它会查看每个目标文件的依赖关系，并按照规则来构建目标文件。
+# 如果某个目标文件的依赖文件已经更新，那么make会重新编译该目标文件。
 
 # To compile and run with a lab solution, set the lab name in lab.mk
 # (e.g., LAB=util).  Run make grade to test solution with the lab's
 # grade script (e.g., grade-lab-util).
+# 要使用实验室解决方案编译和运行，请在lab.mk中设置实验室名称（例如LAB=util）。使用实验室的grade脚本（例如，grade-lab-util）。
 
 -include conf/lab.mk
 
 K=kernel
 U=user
 
+# 定义了一个名为OBJS的变量，该变量包含了一系列文件对象的路径。
+# 每个对象文件表示内核的一个组件或模块，这些组件将在后续的编译和链接过程中用于构建xv6内核。
+# $K/entry.o将被展开为kernel/entry.o，以此类推。
 OBJS = \
-  $K/entry.o \
-  $K/kalloc.o \
-  $K/string.o \
-  $K/main.o \
-  $K/vm.o \
-  $K/proc.o \
-  $K/swtch.o \
-  $K/trampoline.o \
-  $K/trap.o \
-  $K/syscall.o \
-  $K/sysproc.o \
-  $K/bio.o \
-  $K/fs.o \
-  $K/log.o \
-  $K/sleeplock.o \
-  $K/file.o \
-  $K/pipe.o \
-  $K/exec.o \
-  $K/sysfile.o \
-  $K/kernelvec.o \
-  $K/plic.o \
-  $K/virtio_disk.o
+  $K/entry.o \          # 内核入口代码，用于从引导加载程序进入内核。
+  $K/kalloc.o \         # 内核内存分配器。
+  $K/string.o \         # 字符串处理函数。
+  $K/main.o \           # 内核的主要部分，包含初始化和其他系统任务。
+  $K/vm.o \             # 虚拟内存管理。
+  $K/proc.o \           # 进程管理。
+  $K/swtch.o \          # 内核线程上下文切换。
+  $K/trampoline.o \     # 处理系统调用的入口。
+  $K/trap.o \           # 中断和异常处理。
+  $K/syscall.o \        # 系统调用处理。
+  $K/sysproc.o \        # 处理系统调用的辅助函数。
+  $K/bio.o \            # 块I/O层，处理块设备的读写操作。
+  $K/fs.o \             # 文件系统。
+  $K/log.o \            # 文件系统日志（log）的实现。
+  $K/sleeplock.o \      # 睡眠锁，用于进程同步。
+  $K/file.o \           # 文件操作。
+  $K/pipe.o \           # 管道实现。
+  $K/exec.o \           # 进程执行新程序。
+  $K/sysfile.o \        # 与文件系统相关的系统调用处理函数。
+  $K/kernelvec.o \      # 内核向量表。
+  $K/plic.o \           # 外部中断控制器。
+  $K/virtio_disk.o      # 虚拟磁盘驱动。
 
-OBJS_KCSAN = \
-  $K/start.o \
-  $K/console.o \
-  $K/printf.o \
-  $K/uart.o \
-  $K/spinlock.o
+# 定义了一个名为 OBJS_KCSAN 的变量，它包含了一系列文件对象的路径。
+# 这些对象文件用于在启用了 KCSAN（Kernel Concurrency Sanitizer）时构建 xv6 内核。
+OBJS_KCSAN = \          # 内核的启动代码，初始化内核的运行环境。
+  $K/start.o \          # 控制台输出函数的实现，用于向终端输出字符。
+  $K/console.o \        # 格式化输出函数 printf 的实现，支持将格式化的字符串打印到终端。
+  $K/printf.o \         # 与串口通信（UART）相关的实现，用于与硬件串口进行通信。
+  $K/uart.o \           # 与串口通信（UART）相关的实现，用于与硬件串口进行通信。
+  $K/spinlock.o         # 自旋锁的实现，用于实现简单的同步机制，保护共享数据免受并发访问的干扰。
 
+OBJS_KCSAN = \          # 内核的启动代码，初始化内核的运行环境。
+  $K/start.o \          # 控制台输出函数的实现，用于向终端输出字符。
+  $K/console.o \        # 格式化输出函数 printf 的实现，支持将格式化的字符串打印到终端。
+  $K/printf.o \         # 与串口通信（UART）相关的实现，用于与硬件串口进行通信。
+  $K/uart.o \           # 与串口通信（UART）相关的实现，用于与硬件串口进行通信。
+  $K/spinlock.o         # 自旋锁的实现，用于实现简单的同步机制，保护共享数据免受并发访问的干扰。
+
+
+# 条件编译
+# ifdef 检查是否定义了 KCSAN 变量，如果定义了，则执行 ifdef 和 endif 之间的代码块。
+# 如果 KCSAN 变量被定义了，会将 $K/kcsan.o 添加到 OBJS_KCSAN 变量中。
 ifdef KCSAN
 OBJS_KCSAN += \
 	$K/kcsan.o
 endif
 
+# ifeq 检查 LAB 变量是否等于 "lock"，如果相等，则执行 ifeq 和 endif 之间的代码块。
+# 如果 LAB 变量的值是 "lock"，则会将 $K/stats.o 和 $K/sprintf.o 添加到 OBJS 变量中。
 ifeq ($(LAB),$(filter $(LAB), lock))
 OBJS += \
 	$K/stats.o\
 	$K/sprintf.o
 endif
 
-
+# ifeq 检查 LAB 变量是否等于 "net"，如果相等，则执行 ifeq 和 endif 之间的代码块。
+# 如果 LAB 变量的值是 "net"，则会将 $K/e1000.o、$K/net.o、$K/sysnet.o 和 $K/pci.o 添加到 OBJS 变量中。
 ifeq ($(LAB),net)
 OBJS += \
 	$K/e1000.o \
@@ -171,6 +197,7 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 # http://www.gnu.org/software/make/manual/html_node/Chained-Rules.html
 .PRECIOUS: %.o
 
+# 定义了一个名为 UPROGS 的变量，包含了一系列用户程序的路径。
 UPROGS=\
 	$U/_cat\
 	$U/_echo\
