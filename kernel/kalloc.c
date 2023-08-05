@@ -76,16 +76,27 @@ kalloc(void)
 
 
 // 获取空闲内存的页数
-uint64 getfreemem()
+uint64
+getfreemem()
 {
+  // 声明一个指向内存空闲链表的指针
   struct run *r;
+  // 用于保存空闲内存页数的计数器
   uint64 count=0;
+  // 获取内核内存管理锁，防止其他进程同时访问内存管理数据结构
   acquire(&kmem.lock);
+  // 将指针r指向内存空闲链表的头部
   r = kmem.freelist;
+  // 遍历整个内存空闲链表，统计空闲内存页数
   while(r){
+    // 移动指针r到下一个空闲内存块
     r = r->next;
+    // 计数器加1，表示遇到了一个空闲内存页
     count++;
   }
+  // 释放内核内存管理锁，允许其他进程访问内存管理数据结构
   release(&kmem.lock);
+  // 返回空闲内存页数乘以页大小，得到空闲内存的字节数
   return count*PGSIZE;
 }
+
