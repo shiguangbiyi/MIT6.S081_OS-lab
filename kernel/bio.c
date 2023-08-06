@@ -13,6 +13,16 @@
 // * Only one process at a time can use a buffer,
 //     so do not keep them longer than necessary.
 
+//缓冲区缓存。
+//
+//缓冲区缓存是保存磁盘块内容的缓存副本的buf结构的链接列表。在内存中缓存磁盘块可以减少磁盘读取次数，还可以为多个进程使用的磁盘块提供同步点。
+//接口：
+//*要获取特定磁盘块的缓冲区，请调用bread。
+//*更改缓冲区数据后，调用bwrite将其写入磁盘。
+//*缓冲区用完后，调用brelse。
+//*调用brelse后不要使用缓冲区。
+//*一次只能有一个进程使用缓冲区，因此不要将其保留超过必要的时间。
+
 
 #include "types.h"
 #include "param.h"
@@ -23,13 +33,22 @@
 #include "fs.h"
 #include "buf.h"
 
+// 磁盘缓冲区高速缓存（buffer cache）。
+// 它的作用是存储最近访问过的磁盘块，加速对磁盘的读写操作。
 struct {
+  // 自旋锁，用于保护对缓冲区高速缓存的并发访问。
+  // 在多处理器系统中，可能有多个CPU同时访问磁盘缓冲区，为了防止竞争条件，需要使用锁来保护访问。
   struct spinlock lock;
+  // 存储NBUF个磁盘缓冲区（buffer）。
+  // 每个缓冲区对应一个磁盘块，它们用于暂时存储从磁盘读取的数据或者要写入磁盘的数据。
   struct buf buf[NBUF];
 
   // Linked list of all buffers, through prev/next.
   // Sorted by how recently the buffer was used.
   // head.next is most recent, head.prev is least.
+  // 所有缓冲区的双向链表，通过 prev/next 字段连接。
+  // 根据缓冲区的使用顺序进行排序。
+  // head.next 指向最近使用的缓冲区，head.prev 指向最久未使用的缓冲区。
   struct buf head;
 } bcache;
 
