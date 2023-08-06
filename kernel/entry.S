@@ -1,4 +1,6 @@
-	# qemu -kernel loads the kernel at 0x80000000
+# 启动时设置C语言的栈，并跳转到start()函数，然后进入一个无限循环，使处理器保持在一个自旋（spin）状态。
+
+        # qemu -kernel loads the kernel at 0x80000000
         # and causes each CPU to jump there.
         # kernel.ld causes the following code to
         # be placed at 0x80000000.
