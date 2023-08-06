@@ -1,6 +1,4 @@
-//
-// Support functions for system calls that involve file descriptors.
-//
+// file.c 提供了与文件描述符相关的系统调用的支持函数。
 
 #include "types.h"
 #include "riscv.h"
@@ -13,19 +11,22 @@
 #include "stat.h"
 #include "proc.h"
 
+// 指定设备驱动程序的数组，存储了设备的各种操作
 struct devsw devsw[NDEV];
+// 文件表，存储了内核维护的所有文件的信息
 struct {
   struct spinlock lock;
   struct file file[NFILE];
 } ftable;
 
+// 初始化文件表
 void
 fileinit(void)
 {
   initlock(&ftable.lock, "ftable");
 }
 
-// Allocate a file structure.
+// 分配一个文件结构体
 struct file*
 filealloc(void)
 {
@@ -43,7 +44,7 @@ filealloc(void)
   return 0;
 }
 
-// Increment ref count for file f.
+// 增加文件f的引用计数。
 struct file*
 filedup(struct file *f)
 {
@@ -55,7 +56,7 @@ filedup(struct file *f)
   return f;
 }
 
-// Close file f.  (Decrement ref count, close when reaches 0.)
+// 关闭文件f。（递减引用计数，达到0时关闭。）
 void
 fileclose(struct file *f)
 {
@@ -82,8 +83,8 @@ fileclose(struct file *f)
   }
 }
 
-// Get metadata about file f.
-// addr is a user virtual address, pointing to a struct stat.
+// 获取有关文件f的元数据。
+// addr是一个用户虚拟地址，指向一个结构stat。
 int
 filestat(struct file *f, uint64 addr)
 {
@@ -101,8 +102,8 @@ filestat(struct file *f, uint64 addr)
   return -1;
 }
 
-// Read from file f.
-// addr is a user virtual address.
+// 从文件f读取。
+// addr是一个用户虚拟地址。
 int
 fileread(struct file *f, uint64 addr, int n)
 {
@@ -129,8 +130,8 @@ fileread(struct file *f, uint64 addr, int n)
   return r;
 }
 
-// Write to file f.
-// addr is a user virtual address.
+// 写入文件f。
+// addr是一个用户虚拟地址。
 int
 filewrite(struct file *f, uint64 addr, int n)
 {
@@ -146,12 +147,12 @@ filewrite(struct file *f, uint64 addr, int n)
       return -1;
     ret = devsw[f->major].write(1, addr, n);
   } else if(f->type == FD_INODE){
-    // write a few blocks at a time to avoid exceeding
-    // the maximum log transaction size, including
-    // i-node, indirect block, allocation blocks,
-    // and 2 blocks of slop for non-aligned writes.
-    // this really belongs lower down, since writei()
-    // might be writing a device like the console.
+    // 一次写几个块以避免超过
+    // 最大日志事务大小，包括
+    // i节点、间接块、分配块，
+    // 以及用于非对准写入的2个slop块。
+    // 这确实属于下层，因为writei（）
+    // 可能正在编写类似控制台的设备。
     int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
     int i = 0;
     while(i < n){
@@ -179,4 +180,3 @@ filewrite(struct file *f, uint64 addr, int n)
 
   return ret;
 }
-
