@@ -1,3 +1,4 @@
+// 表示日期和时间
 struct rtcdate {
   uint second;
   uint minute;
