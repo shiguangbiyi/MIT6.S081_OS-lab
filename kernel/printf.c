@@ -1,7 +1,4 @@
-//
-// formatted console output -- printf, panic.
-//
-
+// 格式化的控制台输出--printf，panic。
 #include <stdarg.h>
 
 #include "types.h"
@@ -17,14 +14,16 @@
 
 volatile int panicked = 0;
 
-// lock to avoid interleaving concurrent printf's.
+// 锁，用于避免并发 printf 的交叉输出。
 static struct {
   struct spinlock lock;
   int locking;
 } pr;
 
+// 数字字符集，用于进制转换。
 static char digits[] = "0123456789abcdef";
 
+// 打印整数 xx 的进制转换结果。
 static void
 printint(int xx, int base, int sign)
 {
@@ -49,6 +48,7 @@ printint(int xx, int base, int sign)
     consputc(buf[i]);
 }
 
+// 打印指针地址 x。
 static void
 printptr(uint64 x)
 {
@@ -59,7 +59,7 @@ printptr(uint64 x)
     consputc(digits[x >> (sizeof(uint64) * 8 - 4)]);
 }
 
-// Print to the console. only understands %d, %x, %p, %s.
+// 打印到控制台，只支持 %d、%x、%p、%s 格式。
 void
 printf(char *fmt, ...)
 {
@@ -103,7 +103,7 @@ printf(char *fmt, ...)
       consputc('%');
       break;
     default:
-      // Print unknown % sequence to draw attention.
+      // 未知的 % 序列，以引起注意。
       consputc('%');
       consputc(c);
       break;
@@ -114,6 +114,7 @@ printf(char *fmt, ...)
     release(&pr.lock);
 }
 
+// 内核恐慌，输出错误信息并进入死循环。
 void
 panic(char *s)
 {
@@ -121,11 +122,12 @@ panic(char *s)
   printf("panic: ");
   printf(s);
   printf("\n");
-  panicked = 1; // freeze uart output from other CPUs
+  panicked = 1; // 冻结其他 CPU 的 uart 输出
   for(;;)
     ;
 }
 
+// 初始化控制台输出。
 void
 printfinit(void)
 {
