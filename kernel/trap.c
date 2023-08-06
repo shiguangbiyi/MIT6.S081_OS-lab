@@ -1,3 +1,5 @@
+// 处理中断和异常的相关功能。
+
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
@@ -11,7 +13,7 @@ uint ticks;
 
 extern char trampoline[], uservec[], userret[];
 
-// in kernelvec.S, calls kerneltrap().
+// 在 kernelvec.S 中调用 kerneltrap()。
 void kernelvec();
 
 extern int devintr();
@@ -22,7 +24,7 @@ trapinit(void)
   initlock(&tickslock, "time");
 }
 
-// set up to take exceptions and traps while in the kernel.
+// 设置在内核中接收异常和中断。
 void
 trapinithart(void)
 {
@@ -30,8 +32,8 @@ trapinithart(void)
 }
 
 //
-// handle an interrupt, exception, or system call from user space.
-// called from trampoline.S
+// 从用户空间处理中断、异常或系统调用。
+// 从 trampoline.S 调用。
 //
 void
 usertrap(void)
@@ -41,27 +43,26 @@ usertrap(void)
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
 
-  // send interrupts and exceptions to kerneltrap(),
-  // since we're now in the kernel.
+  // 由于我们现在在内核中，将中断和异常发送到 kerneltrap()。
   w_stvec((uint64)kernelvec);
 
   struct proc *p = myproc();
   
-  // save user program counter.
+  // 保存用户程序计数器。
   p->trapframe->epc = r_sepc();
   
   if(r_scause() == 8){
-    // system call
+    // 系统调用
 
     if(p->killed)
       exit(-1);
 
-    // sepc points to the ecall instruction,
-    // but we want to return to the next instruction.
+    // sepc 指向 ecall 指令，
+    // 但我们希望返回到下一条指令。
     p->trapframe->epc += 4;
 
-    // an interrupt will change sstatus &c registers,
-    // so don't enable until done with those registers.
+    // 中断会更改 sstatus 和其他寄存器，
+    // 所以在完成这些寄存器操作之前不要启用中断。
     intr_on();
 
     syscall();
@@ -76,7 +77,7 @@ usertrap(void)
   if(p->killed)
     exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
+  // 如果这是计时器中断，则放弃 CPU。
   if(which_dev == 2)
     yield();
 
@@ -84,52 +85,51 @@ usertrap(void)
 }
 
 //
-// return to user space
+// 返回到用户空间
 //
 void
 usertrapret(void)
 {
   struct proc *p = myproc();
 
-  // we're about to switch the destination of traps from
-  // kerneltrap() to usertrap(), so turn off interrupts until
-  // we're back in user space, where usertrap() is correct.
+  // 我们即将将陷阱的目标从 kerneltrap() 切换到 usertrap()，
+  // 因此在返回到用户空间之前，关闭中断。
   intr_off();
 
-  // send syscalls, interrupts, and exceptions to trampoline.S
+  // 将系统调用、中断和异常发送到 trampoline.S
   w_stvec(TRAMPOLINE + (uservec - trampoline));
 
-  // set up trapframe values that uservec will need when
-  // the process next re-enters the kernel.
-  p->trapframe->kernel_satp = r_satp();         // kernel page table
-  p->trapframe->kernel_sp = p->kstack + PGSIZE; // process's kernel stack
+  // 设置 trampoline.S 需要的 trapframe 值，
+  // 当进程下次重新进入内核时会用到。
+  p->trapframe->kernel_satp = r_satp();         // 内核页表
+  p->trapframe->kernel_sp = p->kstack + PGSIZE; // 进程的内核栈
   p->trapframe->kernel_trap = (uint64)usertrap;
-  p->trapframe->kernel_hartid = r_tp();         // hartid for cpuid()
+  p->trapframe->kernel_hartid = r_tp();         // cpuid() 的 hartid
 
-  // set up the registers that trampoline.S's sret will use
-  // to get to user space.
+  // 设置 trampoline.S 的 sret 指令要使用的寄存器，
+  // 以便切换到用户空间。
   
-  // set S Previous Privilege mode to User.
+  // 设置 S Previous Privilege mode 为 User。
   unsigned long x = r_sstatus();
-  x &= ~SSTATUS_SPP; // clear SPP to 0 for user mode
-  x |= SSTATUS_SPIE; // enable interrupts in user mode
+  x &= ~SSTATUS_SPP; // 将 SPP 置为 0，表示用户模式
+  x |= SSTATUS_SPIE; // 在用户模式下启用中断
   w_sstatus(x);
 
-  // set S Exception Program Counter to the saved user pc.
+  // 设置 S Exception Program Counter 为保存的用户 pc。
   w_sepc(p->trapframe->epc);
 
-  // tell trampoline.S the user page table to switch to.
+  // 告诉 trampoline.S 切换到的用户页表。
   uint64 satp = MAKE_SATP(p->pagetable);
 
-  // jump to trampoline.S at the top of memory, which 
-  // switches to the user page table, restores user registers,
-  // and switches to user mode with sret.
+  // 跳转到内存顶部的 trampoline.S，
+  // 它将切换到用户页表，恢复用户寄存器，
+  // 并使用 sret 切换到用户模式。
   uint64 fn = TRAMPOLINE + (userret - trampoline);
   ((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
 }
 
-// interrupts and exceptions from kernel code go here via kernelvec,
-// on whatever the current kernel stack is.
+// 内核代码的中断和异常都通过 kernelvec 进入这里，
+// 使用当前的内核栈。
 void 
 kerneltrap()
 {
@@ -149,12 +149,12 @@ kerneltrap()
     panic("kerneltrap");
   }
 
-  // give up the CPU if this is a timer interrupt.
+  // 如果这是计时器中断，则放弃 CPU。
   if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
     yield();
 
-  // the yield() may have caused some traps to occur,
-  // so restore trap registers for use by kernelvec.S's sepc instruction.
+  // yield() 可能会导致一些陷阱发生，
+  // 因此将陷阱寄存器恢复为 kernelvec.S 的 sepc 指令使用的值。
   w_sepc(sepc);
   w_sstatus(sstatus);
 }
@@ -168,11 +168,11 @@ clockintr()
   release(&tickslock);
 }
 
-// check if it's an external interrupt or software interrupt,
-// and handle it.
-// returns 2 if timer interrupt,
-// 1 if other device,
-// 0 if not recognized.
+// 检查是否是外部中断或软中断，
+// 并处理它。
+// 返回 2 表示计时器中断，
+// 返回 1 表示其他设备中断，
+// 返回 0 表示不被识别的中断。
 int
 devintr()
 {
@@ -180,9 +180,9 @@ devintr()
 
   if((scause & 0x8000000000000000L) &&
      (scause & 0xff) == 9){
-    // this is a supervisor external interrupt, via PLIC.
+    // 这是超级外部中断，通过 PLIC。
 
-    // irq indicates which device interrupted.
+    // irq 表示哪个设备中断。
     int irq = plic_claim();
 
     if(irq == UART0_IRQ){
@@ -193,23 +193,21 @@ devintr()
       printf("unexpected interrupt irq=%d\n", irq);
     }
 
-    // the PLIC allows each device to raise at most one
-    // interrupt at a time; tell the PLIC the device is
-    // now allowed to interrupt again.
+    // PLIC 允许每个设备最多引发一个中断；
+    // 告诉 PLIC 设备现在可以再次中断。
     if(irq)
       plic_complete(irq);
 
     return 1;
   } else if(scause == 0x8000000000000001L){
-    // software interrupt from a machine-mode timer interrupt,
-    // forwarded by timervec in kernelvec.S.
+    // 来自机器模式计时器中断的软中断，
+    // 由 kernelvec.S 中的 timervec 转发。
 
     if(cpuid() == 0){
       clockintr();
     }
     
-    // acknowledge the software interrupt by clearing
-    // the SSIP bit in sip.
+    // 通过清除 sip 中的 SSIP 位确认软中断。
     w_sip(r_sip() & ~2);
 
     return 2;
@@ -217,4 +215,3 @@ devintr()
     return 0;
   }
 }
-
