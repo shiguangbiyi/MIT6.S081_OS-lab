@@ -1,3 +1,5 @@
+// pipe.c 文件实现了管道操作的相关函数。
+
 #include "types.h"
 #include "riscv.h"
 #include "defs.h"
@@ -10,15 +12,17 @@
 
 #define PIPESIZE 512
 
+// 管道结构
 struct pipe {
   struct spinlock lock;
-  char data[PIPESIZE];
-  uint nread;     // number of bytes read
-  uint nwrite;    // number of bytes written
-  int readopen;   // read fd is still open
-  int writeopen;  // write fd is still open
+  char data[PIPESIZE]; // 管道数据缓冲区
+  uint nread;     // 已读取字节数
+  uint nwrite;    // 已写入字节数
+  int readopen;   // 读端是否打开
+  int writeopen;  // 写端是否打开
 };
 
+// 创建管道文件描述符
 int
 pipealloc(struct file **f0, struct file **f1)
 {
@@ -55,6 +59,7 @@ pipealloc(struct file **f0, struct file **f1)
   return -1;
 }
 
+// 关闭管道
 void
 pipeclose(struct pipe *pi, int writable)
 {
@@ -73,6 +78,7 @@ pipeclose(struct pipe *pi, int writable)
     release(&pi->lock);
 }
 
+// 写入管道数据
 int
 pipewrite(struct pipe *pi, uint64 addr, int n)
 {
@@ -85,7 +91,7 @@ pipewrite(struct pipe *pi, uint64 addr, int n)
       release(&pi->lock);
       return -1;
     }
-    if(pi->nwrite == pi->nread + PIPESIZE){ //DOC: pipewrite-full
+    if(pi->nwrite == pi->nread + PIPESIZE){ // 若管道已满，等待读取方读取数据
       wakeup(&pi->nread);
       sleep(&pi->nwrite, &pi->lock);
     } else {
@@ -96,12 +102,13 @@ pipewrite(struct pipe *pi, uint64 addr, int n)
       i++;
     }
   }
-  wakeup(&pi->nread);
+  wakeup(&pi->nread); // 唤醒读取方
   release(&pi->lock);
 
   return i;
 }
 
+// 从管道读取数据
 int
 piperead(struct pipe *pi, uint64 addr, int n)
 {
@@ -110,21 +117,21 @@ piperead(struct pipe *pi, uint64 addr, int n)
   char ch;
 
   acquire(&pi->lock);
-  while(pi->nread == pi->nwrite && pi->writeopen){  //DOC: pipe-empty
+  while(pi->nread == pi->nwrite && pi->writeopen){ // 若管道为空，等待数据写入
     if(pr->killed){
       release(&pi->lock);
       return -1;
     }
-    sleep(&pi->nread, &pi->lock); //DOC: piperead-sleep
+    sleep(&pi->nread, &pi->lock);
   }
-  for(i = 0; i < n; i++){  //DOC: piperead-copy
+  for(i = 0; i < n; i++){ // 从管道中读取数据
     if(pi->nread == pi->nwrite)
       break;
     ch = pi->data[pi->nread++ % PIPESIZE];
     if(copyout(pr->pagetable, addr + i, &ch, 1) == -1)
       break;
   }
-  wakeup(&pi->nwrite);  //DOC: piperead-wakeup
+  wakeup(&pi->nwrite); // 唤醒写入方
   release(&pi->lock);
   return i;
 }
