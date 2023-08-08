@@ -65,26 +65,42 @@ void kvminithart()
 // 在页表pagetable中查找虚拟地址va对应的PTE的地址。如果alloc非0，则会创建所需的页表页。
 pte_t *walk(pagetable_t pagetable, uint64 va, int alloc)
 {
+  // 检查虚拟地址是否越界
   if (va >= MAXVA)
     panic("walk");
 
+  // 遍历页表的层级，从最高层级开始向下查找
   for (int level = 2; level > 0; level--)
   {
+    // 计算虚拟地址在当前层级的页表项索引
     pte_t *pte = &pagetable[PX(level, va)];
+
+    // 检查当前页表项是否有效（存在）
     if (*pte & PTE_V)
     {
+      // 如果当前页表项有效，获取下一级页表的地址，并继续向下查找
       pagetable = (pagetable_t)PTE2PA(*pte);
     }
     else
     {
+      // 如果当前页表项无效，说明虚拟地址所对应的物理页尚未映射
+
+      // 如果alloc为0，表示不需要分配新的页表，直接返回0
       if (!alloc || (pagetable = (pde_t *)kalloc()) == 0)
         return 0;
+
+      // 将新分配的页表清零初始化
       memset(pagetable, 0, PGSIZE);
+
+      // 将当前页表项设置为指向新分配的页表的物理地址，并标记为有效
       *pte = PA2PTE(pagetable) | PTE_V;
     }
   }
+
+  // 返回虚拟地址对应的最终页表项的地址
   return &pagetable[PX(0, va)];
 }
+
 
 // 查找虚拟地址va对应的物理地址，并返回。如果未映射，则返回0。
 // 只能用于查找用户页。
