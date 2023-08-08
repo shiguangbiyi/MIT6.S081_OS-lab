@@ -54,19 +54,28 @@ void
 pgaccess_test()
 {
   char *buf;
-  unsigned int abits;
+  unsigned int abits; // 存储返回的访问位掩码
   printf("pgaccess_test starting\n");
   testname = "pgaccess_test";
+
+  // 分配一块内存用于测试
   buf = malloc(32 * PGSIZE);
-  if (pgaccess(buf, 32, &abits) < 0)
-    err("pgaccess failed");
+  if (pgaccess(buf, 32, &abits) < 0) // 调用pgaccess系统调用来检测访问情况
+    err("pgaccess failed"); // 如果pgaccess失败，输出错误信息
+
+  // 在测试内存的不同位置进行访问
   buf[PGSIZE * 1] += 1;
   buf[PGSIZE * 2] += 1;
   buf[PGSIZE * 30] += 1;
+
+  // 再次调用pgaccess系统调用来检测访问情况
   if (pgaccess(buf, 32, &abits) < 0)
-    err("pgaccess failed");
+    err("pgaccess failed"); // 如果pgaccess失败，输出错误信息
+
+  // 检查返回的访问位掩码是否与预期相符
   if (abits != ((1 << 1) | (1 << 2) | (1 << 30)))
-    err("incorrect access bits set");
-  free(buf);
-  printf("pgaccess_test: OK\n");
+    err("incorrect access bits set"); // 如果访问位掩码与预期不符，输出错误信息
+
+  free(buf); // 释放测试用的内存
+  printf("pgaccess_test: OK\n"); // 输出测试通过的信息
 }
