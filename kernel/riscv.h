@@ -301,6 +301,8 @@ r_sp()
 
 // read and write tp, the thread pointer, which holds
 // this core's hartid (core number), the index into cpus[].
+// Thread Pointer是一个特殊的寄存器，用于存储当前线程（或称为上下文）的指针.
+// tp寄存器的值对应于当前线程所在的硬件线程ID.
 static inline uint64
 r_tp()
 {
