@@ -1,3 +1,5 @@
+// 定义了一些与进程管理相关的函数
+
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
@@ -43,6 +45,7 @@ proc_mapstacks(pagetable_t kpgtbl) {
 }
 
 // initialize the proc table at boot time.
+// 在系统启动时初始化进程表。为每个进程设置锁和内核栈。
 void
 procinit(void)
 {
@@ -59,6 +62,7 @@ procinit(void)
 // Must be called with interrupts disabled,
 // to prevent race with process being moved
 // to a different CPU.
+// 获取当前CPU的编号。
 int
 cpuid()
 {
@@ -68,6 +72,7 @@ cpuid()
 
 // Return this CPU's cpu struct.
 // Interrupts must be disabled.
+// 返回当前CPU的 cpu 结构指针。
 struct cpu*
 mycpu(void) {
   int id = cpuid();
@@ -76,6 +81,7 @@ mycpu(void) {
 }
 
 // Return the current struct proc *, or zero if none.
+// 返回当前进程的 proc 结构指针，如果没有进程，则返回0。
 struct proc*
 myproc(void) {
   push_off();
@@ -85,6 +91,7 @@ myproc(void) {
   return p;
 }
 
+// 分配一个唯一的进程ID。
 int
 allocpid() {
   int pid;
@@ -101,6 +108,7 @@ allocpid() {
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
 // If there are no free procs, or a memory allocation fails, return 0.
+// 在进程表中找到一个未使用的进程（状态为 UNUSED），为其分配进程ID、内核栈、用户态页表等，并返回该进程的 proc 结构指针。
 static struct proc*
 allocproc(void)
 {
@@ -127,6 +135,23 @@ found:
     return 0;
   }
 
+  // Allocate a usyscall page.
+  // 分配一个 usyscall 页面。
+  // 使用 kalloc 函数分配一个页面，用于存储系统调用相关的信息。
+  if((p->usyscall = (struct usyscall *)kalloc()) == 0){
+    // 如果分配失败，进行清理工作并返回 0 表示出错。
+
+    // 首先释放该进程的资源，包括释放 trapframe 等。
+    freeproc(p);
+    // 然后释放该进程的锁。
+    release(&p->lock);
+    // 最后返回 0 表示出错。
+    return 0;
+  }
+
+  // 将当前进程的 PID 存储在分配的 usyscall 页面上。
+  p->usyscall->pid = p->pid;
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -147,12 +172,18 @@ found:
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
+// 释放进程 p 的内核栈和用户态页表，还原进程的状态为 UNUSED。
 static void
 freeproc(struct proc *p)
 {
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+
+  if(p->usyscall)
+    kfree((void*)p->usyscall);
+  p->usyscall = 0;
+
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -182,6 +213,7 @@ proc_pagetable(struct proc *p)
   // at the highest user virtual address.
   // only the supervisor uses it, on the way
   // to/from user space, so not PTE_U.
+  // 权限控制：PTE_R可读；PTE_X可执行；PTE_W可写
   if(mappages(pagetable, TRAMPOLINE, PGSIZE,
               (uint64)trampoline, PTE_R | PTE_X) < 0){
     uvmfree(pagetable, 0);
@@ -196,6 +228,25 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+  // map the usyscall just below TRAMPOLINE
+  // 使用 mappages 函数将共享页映射到虚拟地址 USYSCALL 处。
+  // pagetable 是用户态页表指针，USYSCALL 是共享页的虚拟地址，
+  // PGSIZE 表示映射的页面大小（通常为 4096 字节），
+  // p->usyscall 是一个结构体指针，指向用于存储系统调用信息的结构体。
+  // PTE_R 表示可读权限，PTE_U 表示用户态权限。
+  if(mappages(pagetable, USYSCALL, PGSIZE,
+            (uint64)(p->usyscall), PTE_R | PTE_U) < 0){
+  // 如果映射失败，进行清理工作并返回 0 表示出错。
+
+  // 首先取消共享页和 TRAMPOLINE 的映射。
+  uvmunmap(pagetable, USYSCALL, 1, 0);
+  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+  // 然后释放用户态页表的内存。
+  uvmfree(pagetable, 0);
+  // 最后返回 0 表示出错。
+  return 0;
+  }
+
   return pagetable;
 }
 
@@ -204,6 +255,7 @@ proc_pagetable(struct proc *p)
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
+  uvmunmap(pagetable, USYSCALL, 1, 0);
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
