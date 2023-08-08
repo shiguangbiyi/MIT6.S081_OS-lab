@@ -432,3 +432,41 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+static char *prefix[]={
+  [0]="..",
+  [1]=".. ..",
+  [2]=".. .. .."
+};
+
+void
+vmprint(pagetable_t pagetable, uint64 depth) {
+  // 如果递归深度超过2层，则直接返回，限制打印深度。
+  if (depth > 2)
+    return;
+
+  // 如果当前深度是0，则打印页表的地址作为标题。
+  if (depth == 0)
+    printf("page table %p\n", pagetable);
+
+  // 获取当前深度对应的缩进字符。
+  char *buf = prefix[depth];
+
+  // 遍历页表中的512个条目。
+  for (int i = 0; i < 512; i++) {
+    // 获取当前页表条目的PTE值。
+    pte_t pte = pagetable[i];
+
+    // 检查当前PTE是否有效（PTE_V标志为1）。
+    if (pte & PTE_V) {
+      // 打印当前PTE的信息，包括索引、PTE的值和从PTE中提取的物理地址（PA）。
+      printf("%s%d: pte %p pa %p\n", buf, i, pte, PTE2PA(pte));
+
+      // 从PTE中提取的物理地址作为下一级页表的地址。
+      uint64 child = PTE2PA(pte);
+
+      // 递归调用vmprint函数，打印下一级页表的内容，深度加1。
+      vmprint((pagetable_t)child, depth + 1);
+    }
+  }
+}
