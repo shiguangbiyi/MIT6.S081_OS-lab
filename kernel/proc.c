@@ -128,7 +128,7 @@ found:
   p->pid = allocpid(); // 分配一个新的进程ID
   p->state = USED; // 将进程状态设置为USED，表示进程已经被使用
 
-  // 分配一个陷阱帧页。
+  // 分配一个陷阱帧页，用于保存进程上下文信息
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){ // 分配陷阱帧页内存
     freeproc(p); // 分配失败，释放进程
     release(&p->lock); // 释放进程的互斥锁
