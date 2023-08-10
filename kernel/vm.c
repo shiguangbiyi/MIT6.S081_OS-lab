@@ -289,36 +289,41 @@ void uvmfree(pagetable_t pagetable, uint64 sz)
 // 复制包括页表和物理内存。
 // 成功返回0，失败返回-1。
 // 在失败时释放任何已分配的内存。
-int uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
-{
-  pte_t *pte;
-  uint64 pa, i;
-  uint flags;
-  char *mem;
+int uvmcopy(pagetable_t old, pagetable_t new, uint64 sz) {
+  pte_t *pte;       // 指向页表项的指针
+  uint64 pa, i;     // 物理地址和循环计数器
+  uint flags;       // 页表项的标志位
+  char *mem;        // 用于分配临时内存
 
-  for (i = 0; i < sz; i += PGSIZE)
-  {
-    if ((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
-    if ((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
-    pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if ((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char *)pa, PGSIZE);
-    if (mappages(new, i, PGSIZE, (uint64)mem, flags) != 0)
-    {
-      kfree(mem);
-      goto err;
+  // 通过循环以页的大小为单位，复制给定大小的内存
+  for(i = 0; i < sz; i += PGSIZE) {
+    // 在旧页表中找到指定地址的页表项
+    if((pte = walk(old, i, 0)) == 0)
+      panic("uvmcopy: pte should exist");  // 如果页表项不存在，产生内核崩溃
+    if((*pte & PTE_V) == 0)
+      panic("uvmcopy: page not present");  // 如果页不在内存中，产生内核崩溃
+    pa = PTE2PA(*pte); // 获取物理地址
+    flags = PTE_FLAGS(*pte); // 获取页表项的标志位
+
+    // 分配内核内存并将源内存内容复制到临时内存中
+    if((mem = kalloc()) == 0) // 分配内存
+      goto err;  // 如果分配失败，跳转到错误处理部分
+    memmove(mem, (char*)pa, PGSIZE); // 复制源内存到临时内存
+
+    // 映射新页表中的地址到新分配的内存
+    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0) {
+      kfree(mem);  // 如果映射失败，释放临时内存
+      goto err;    // 跳转到错误处理部分
     }
   }
-  return 0;
+  return 0; // 成功复制内存，返回0
 
 err:
+  // 复制失败时，解除新页表中已映射的内存，然后返回-1表示失败
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
 }
+
 
 // 标记PTE为不可用户访问。
 // 用于exec函数为用户堆栈的守护页。
