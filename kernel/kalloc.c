@@ -32,8 +32,9 @@ int pagecnt(void *pa_start,void *pa_end){
   char *p;
   int cnt=0;
   p=(char *) PGROUNDUP((uint64) pa_start);
-  for(;p+PGSIZE<=(char *) pa_end;p+=PGSIZE)
+  for(;p+PGSIZE<=(char *) pa_end;p+=PGSIZE){
     cnt++;
+  }
   return cnt;
 }
 
@@ -41,12 +42,15 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+
   kmem.page_cnt = pagecnt(end,(void *) PHYSTOP);
-  
+
   kmem.ref_page = end;
+
   for(int i=0;i<kmem.page_cnt;++i){
     kmem.ref_page[i]=0;
   }
+
   kmem.end_=kmem.ref_page+kmem.page_cnt;
 
   freerange(kmem.end_, (void*)PHYSTOP);
