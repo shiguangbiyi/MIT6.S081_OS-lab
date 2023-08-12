@@ -21,36 +21,41 @@
 static int
 argfd(int n, int *pfd, struct file **pf)
 {
-  int fd;
-  struct file *f;
+  int fd;                  // 用于存储从参数中获取的文件描述符
+  struct file *f;          // 用于存储与文件描述符相关联的 struct file 结构
 
-  if(argint(n, &fd) < 0)
+  if(argint(n, &fd) < 0)   // 从系统调用参数中获取第 n 个整数参数作为文件描述符
     return -1;
-  if(fd < 0 || fd >= NOFILE || (f=myproc()->ofile[fd]) == 0)
+  if(fd < 0 || fd >= NOFILE || (f=myproc()->ofile[fd]) == 0)   // 检查文件描述符的合法性和文件是否存在
     return -1;
   if(pfd)
-    *pfd = fd;
+    *pfd = fd;             // 将文件描述符存储到 pfd 指向的位置
   if(pf)
-    *pf = f;
-  return 0;
+    *pf = f;               // 将 struct file 结构存储到 pf 指向的位置
+  return 0;                // 返回成功状态
 }
+
 
 // Allocate a file descriptor for the given file.
 // Takes over file reference from caller on success.
+// 为给定的文件分配一个文件描述符。
+// 在成功时接管调用者的文件引用。
+
 static int
 fdalloc(struct file *f)
 {
-  int fd;
-  struct proc *p = myproc();
+  int fd;                      // 用于存储分配的文件描述符
+  struct proc *p = myproc();   // 获取当前进程的 proc 结构指针
 
-  for(fd = 0; fd < NOFILE; fd++){
-    if(p->ofile[fd] == 0){
-      p->ofile[fd] = f;
-      return fd;
+  for(fd = 0; fd < NOFILE; fd++){  // 遍历文件描述符数组的所有位置
+    if(p->ofile[fd] == 0){          // 检查当前位置是否为空闲
+      p->ofile[fd] = f;             // 将文件结构指针存储到该位置
+      return fd;                    // 返回分配的文件描述符
     }
   }
-  return -1;
+  return -1;                       // 如果没有空闲的文件描述符位置，则返回错误码
 }
+
 
 uint64
 sys_dup(void)
@@ -283,32 +288,52 @@ create(char *path, short type, short major, short minor)
   return ip;
 }
 
+// sys_open 系统调用，用于打开文件并返回文件描述符。
 uint64
 sys_open(void)
 {
-  char path[MAXPATH];
-  int fd, omode;
-  struct file *f;
-  struct inode *ip;
+  char path[MAXPATH];   // 用于存储传递的文件路径
+  int fd, omode;        // fd 用于存储文件描述符，omode 用于存储打开模式
+  struct file *f;       // 文件结构指针，表示将被打开的文件
+  struct inode *ip;     // inode 结构指针，表示被打开文件的 inode
   int n;
 
   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
     return -1;
 
-  begin_op();
+  begin_op();  // 开始文件系统操作
 
-  if(omode & O_CREATE){
-    ip = create(path, T_FILE, 0, 0);
+  if(omode & O_CREATE){  // 如果指定了创建标志
+    ip = create(path, T_FILE, 0, 0);  // 创建文件的 inode
     if(ip == 0){
       end_op();
       return -1;
     }
   } else {
-    if((ip = namei(path)) == 0){
-      end_op();
-      return -1;
+    int symlink_depth = 0;  // 符号链接深度，用于检测循环符号链接
+    while(1) { // 递归跟随符号链接
+      if((ip = namei(path)) == 0){  // 根据路径查找 inode
+        end_op();
+        return -1;
+      }
+      ilock(ip);  // 锁定 inode
+      if(ip->type == T_SYMLINK && (omode & O_NOFOLLOW) == 0) {
+        if(++symlink_depth > 10) {
+          // 太多层的符号链接，可能是一个循环
+          iunlockput(ip);
+          end_op();
+          return -1;
+        }
+        if(readi(ip, 0, (uint64)path, 0, MAXPATH) < 0) {
+          iunlockput(ip);
+          end_op();
+          return -1;
+        }
+        iunlockput(ip);  // 解锁 inode
+      } else {
+        break;
+      }
     }
-    ilock(ip);
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
@@ -350,6 +375,7 @@ sys_open(void)
 
   return fd;
 }
+
 
 uint64
 sys_mkdir(void)
@@ -482,5 +508,41 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+
+uint64
+sys_symlink(void)
+{
+  struct inode *ip;
+  char target[MAXPATH], path[MAXPATH];
+  
+  // 从用户空间获取目标路径和链接路径的字符串
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+
+  // 开始文件系统操作
+  begin_op();
+
+  // 调用 create 函数创建一个新的符号链接文件，类型为 T_SYMLINK
+  ip = create(path, T_SYMLINK, 0, 0);
+  if(ip == 0){
+    end_op();
+    return -1;
+  }
+
+  // 将目标路径写入符号链接的数据块中
+  // 注意：这里使用第一个数据块来存储目标路径
+  if(writei(ip, 0, (uint64)target, 0, strlen(target)) < 0) {
+    end_op();
+    return -1;
+  }
+
+  // 解锁并释放 inode
+  iunlockput(ip);
+
+  // 结束文件系统操作
+  end_op();
   return 0;
 }
