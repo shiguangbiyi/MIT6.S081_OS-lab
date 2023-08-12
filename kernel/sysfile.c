@@ -18,39 +18,46 @@
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
+// 从第 n 个 word 大小的系统调用参数中获取文件描述符，并返回描述符和相应的 struct file。
+
 static int
 argfd(int n, int *pfd, struct file **pf)
 {
-  int fd;
-  struct file *f;
+  int fd;                  // 用于存储从参数中获取的文件描述符
+  struct file *f;          // 用于存储与文件描述符相关联的 struct file 结构
 
-  if(argint(n, &fd) < 0)
+  if(argint(n, &fd) < 0)   // 从系统调用参数中获取第 n 个整数参数作为文件描述符
     return -1;
-  if(fd < 0 || fd >= NOFILE || (f=myproc()->ofile[fd]) == 0)
+  if(fd < 0 || fd >= NOFILE || (f=myproc()->ofile[fd]) == 0)   // 检查文件描述符的合法性和文件是否存在
     return -1;
   if(pfd)
-    *pfd = fd;
+    *pfd = fd;             // 将文件描述符存储到 pfd 指向的位置
   if(pf)
-    *pf = f;
-  return 0;
+    *pf = f;               // 将 struct file 结构存储到 pf 指向的位置
+  return 0;                // 返回成功状态
 }
+
 
 // Allocate a file descriptor for the given file.
 // Takes over file reference from caller on success.
+// 为给定的文件分配一个文件描述符。
+// 在成功时接管调用者的文件引用。
+
 static int
 fdalloc(struct file *f)
 {
-  int fd;
-  struct proc *p = myproc();
+  int fd;                      // 用于存储分配的文件描述符
+  struct proc *p = myproc();   // 获取当前进程的 proc 结构指针
 
-  for(fd = 0; fd < NOFILE; fd++){
-    if(p->ofile[fd] == 0){
-      p->ofile[fd] = f;
-      return fd;
+  for(fd = 0; fd < NOFILE; fd++){  // 遍历文件描述符数组的所有位置
+    if(p->ofile[fd] == 0){          // 检查当前位置是否为空闲
+      p->ofile[fd] = f;             // 将文件结构指针存储到该位置
+      return fd;                    // 返回分配的文件描述符
     }
   }
-  return -1;
+  return -1;                       // 如果没有空闲的文件描述符位置，则返回错误码
 }
+
 
 uint64
 sys_dup(void)
