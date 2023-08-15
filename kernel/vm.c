@@ -5,6 +5,11 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "fcntl.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -430,5 +435,46 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return 0;
   } else {
     return -1;
+  }
+}
+
+
+// 解除VMA内的页面映射
+void vmaunmap(pagetable_t pagetable, uint64 va, uint64 nbytes, struct vma *v)
+{
+  uint64 a;
+  pte_t *pte;
+
+  // printf("unmapping %d bytes from %p\n", nbytes, va);
+
+  // borrowed from "uvmunmap"
+  // 循环遍历需要解除映射的范围内的每个页面
+  for (a = va; a < va + nbytes; a += PGSIZE) {
+    if ((pte = walk(pagetable, a, 0)) == 0)
+      panic("sys_munmap: walk"); // 如果获取PTE失败，触发panic
+    if (PTE_FLAGS(*pte) == PTE_V)
+      panic("sys_munmap: not a leaf"); // 如果PTE标志表示不是叶子页，触发panic
+    if (*pte & PTE_V) {
+      uint64 pa = PTE2PA(*pte); // 从PTE中获取物理地址
+
+      // 如果页面是"脏的"（有写操作）且VMA标记为MAP_SHARED（映射为共享内存）
+      if ((*pte & PTE_D) && (v->flags & MAP_SHARED)) {
+        begin_op(); // 开始文件操作
+        ilock(v->f->ip); // 锁定文件的inode
+        uint64 aoff = a - v->vastart; // 相对于内存范围开始的偏移量
+        if (aoff < 0) { // 如果第一页不是完整的4K页面
+          writei(v->f->ip, 0, pa + (-aoff), v->offset, PGSIZE + aoff); // 将页面内容写回文件
+        } else if (aoff + PGSIZE > v->sz) { // 如果最后一页不是完整的4K页面
+          writei(v->f->ip, 0, pa, v->offset + aoff, v->sz - aoff); // 将页面内容写回文件
+        } else { // 完整的4K页面
+          writei(v->f->ip, 0, pa, v->offset + aoff, PGSIZE); // 将页面内容写回文件
+        }
+        iunlock(v->f->ip); // 解锁文件的inode
+        end_op(); // 结束文件操作
+      }
+
+      kfree((void *)pa); // 释放物理页面
+      *pte = 0; // 清空PTE
+    }
   }
 }
