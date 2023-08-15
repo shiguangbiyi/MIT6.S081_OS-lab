@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "memlayout.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -484,3 +485,163 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_mmap(void)
+{
+  uint64 addr, sz, offset;
+  int prot, flags, fd; struct file *f;
+
+  if(argaddr(0, &addr) < 0 || argaddr(1, &sz) < 0 || argint(2, &prot) < 0
+    || argint(3, &flags) < 0 || argfd(4, &fd, &f) < 0 || argaddr(5, &offset) < 0 || sz == 0)
+    return -1;
+  
+  if((!f->readable && (prot & (PROT_READ)))
+     || (!f->writable && (prot & PROT_WRITE) && !(flags & MAP_PRIVATE)))
+    return -1;
+  
+  sz = PGROUNDUP(sz);
+
+  struct proc *p = myproc();
+  struct vma *v = 0;
+  uint64 vaend = MMAPEND; // non-inclusive
+  
+  // mmaptest never passed a non-zero addr argument.
+  // so addr here is ignored and a new unmapped va region is found to
+  // map the file
+  // our implementation maps file right below where the trapframe is,
+  // from high addresses to low addresses.
+
+  // Find a free vma, and calculate where to map the file along the way.
+  for(int i=0;i<NVMA;i++) {
+    struct vma *vv = &p->vmas[i];
+    if(vv->valid == 0) {
+      if(v == 0) {
+        v = &p->vmas[i];
+        // found free vma;
+        v->valid = 1;
+      }
+    } else if(vv->vastart < vaend) {
+      vaend = PGROUNDDOWN(vv->vastart);
+    }
+  }
+
+  if(v == 0){
+    panic("mmap: no free vma");
+  }
+  
+  v->vastart = vaend - sz;
+  v->sz = sz;
+  v->prot = prot;
+  v->flags = flags;
+  v->f = f; // assume f->type == FD_INODE
+  v->offset = offset;
+
+  filedup(v->f);
+
+  return v->vastart;
+}
+
+
+// 根据位于特定虚拟地址范围内的虚拟地址查找对应的VMA结构
+struct vma *findvma(struct proc *p, uint64 va) {
+  for (int i = 0; i < NVMA; i++) {
+    struct vma *vv = &p->vmas[i];
+    
+    // 检查VMA是否有效且虚拟地址在VMA范围内
+    if (vv->valid == 1 && va >= vv->vastart && va < vv->vastart + vv->sz) {
+      return vv; // 返回对应的VMA结构
+    }
+  }
+  return 0; // 没有找到匹配的VMA，返回0表示未找到
+}
+
+
+// 检查一个页面是否之前被延迟分配给某个VMA并且需要在使用前被touch
+// 如果是，则touch页面，使其映射到一个实际的物理页面并包含映射文件的内容。
+int vmatrylazytouch(uint64 va) {
+  struct proc *p = myproc(); // 获取当前进程指针
+  struct vma *v = findvma(p, va); // 查找给定虚拟地址所属的VMA
+  if (v == 0) {
+    return 0; // 如果找不到匹配的VMA，返回0表示没有找到需要延迟touch的页面
+  }
+
+  // 分配物理页面
+  void *pa = kalloc(); // 在物理内存中分配一个页面
+  if (pa == 0) {
+    panic("vmalazytouch: kalloc"); // 如果分配失败，触发panic
+  }
+  memset(pa, 0, PGSIZE); // 将页面内容初始化为0
+  
+  // 从磁盘读取数据
+  begin_op();
+  ilock(v->f->ip); // 锁定文件inode
+  readi(v->f->ip, 0, (uint64)pa, v->offset + PGROUNDDOWN(va - v->vastart), PGSIZE); // 从文件中读取数据到物理页面
+  iunlock(v->f->ip); // 解锁文件inode
+  end_op(); // 结束文件操作
+
+  // 设置适当的权限，并映射页面到虚拟地址
+  int perm = PTE_U;
+  if (v->prot & PROT_READ)
+    perm |= PTE_R;
+  if (v->prot & PROT_WRITE)
+    perm |= PTE_W;
+  if (v->prot & PROT_EXEC)
+    perm |= PTE_X;
+
+  if (mappages(p->pagetable, va, PGSIZE, (uint64)pa, PTE_R | PTE_W | PTE_U) < 0) {
+    panic("vmalazytouch: mappages"); // 如果映射失败，触发panic
+  }
+
+  return 1; // 返回1表示页面已经被延迟touch并映射到了实际物理页面
+}
+
+
+// 将一个 vma 所分配的所有页释放
+uint64 sys_munmap(void)
+{
+  uint64 addr, sz;
+
+  // 获取系统调用参数：虚拟地址和大小
+  if (argaddr(0, &addr) < 0 || argaddr(1, &sz) < 0 || sz == 0)
+    return -1;
+
+  struct proc *p = myproc(); // 获取当前进程指针
+
+  // 查找与指定虚拟地址相关联的VMA
+  struct vma *v = findvma(p, addr);
+  if (v == 0) {
+    return -1; // 如果没有找到匹配的VMA，返回-1表示失败
+  }
+
+  if (addr > v->vastart && addr + sz < v->vastart + v->sz) {
+    // 尝试在内存范围内创建一个"洞"
+    return -1; // 如果尝试在内存范围内创建一个洞，返回-1表示失败
+  }
+
+  uint64 addr_aligned = addr;
+  if (addr > v->vastart) {
+    addr_aligned = PGROUNDUP(addr); // 对齐地址到页面边界
+  }
+
+  int nunmap = sz - (addr_aligned - addr); // 需要解除映射的字节数
+  if (nunmap < 0)
+    nunmap = 0;
+
+  // 自定义的内存页解除映射例程，用于解除内存映射的页面
+  vmaunmap(p->pagetable, addr_aligned, nunmap, v);
+
+  if (addr <= v->vastart && addr + sz > v->vastart) { // 在开头处解除映射
+    v->offset += addr + sz - v->vastart;
+    v->vastart = addr + sz;
+  }
+  v->sz -= sz; // 更新VMA的大小
+
+  if (v->sz <= 0) {
+    fileclose(v->f); // 关闭映射的文件
+    v->valid = 0; // 标记VMA为无效
+  }
+
+  return 0; // 返回0表示成功
+}
+
