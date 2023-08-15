@@ -141,6 +141,11 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // 清理VMA
+  for(int i=0;i<NVMA;i++) {
+    p->vmas[i].valid = 0;
+  }
+
   return p;
 }
 
@@ -153,6 +158,11 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  // 释放VMA
+  for(int i = 0; i < NVMA; i++) {
+    struct vma *v = &p->vmas[i];
+    vmaunmap(p->pagetable, v->vastart, v->sz, v);
+  }
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -300,6 +310,16 @@ fork(void)
     if(p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
+
+  // 复制通过mmap创建的VMA。
+  // 实际的内存页面和PTE不会被复制。
+  for (i = 0; i < NVMA; i++) {
+    struct vma *v = &p->vmas[i]; // 获取当前进程的VMA结构
+    if (v->valid) { // 如果VMA是有效的（已经被创建）
+      np->vmas[i] = *v; // 将当前VMA的内容复制到新进程的对应VMA中
+      filedup(v->f); // 增加文件结构的引用计数，以防止文件被关闭
+    }
+  }
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
