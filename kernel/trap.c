@@ -78,7 +78,21 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
+  {
+    // 如果进程设置了警报间隔且当前不在处理中断
+    if(p->interval!=0&&!p->handling)
+    {
+      // 如果计数器减到了0，表示达到了设定的间隔
+      if(--p->count==0)
+      {
+        p->count=p->interval;
+        p->handling=1;
+        p->save_info=*(p->trapframe);
+        p->trapframe->epc=(uint64)p->fn;
+      }
+    }
     yield();
+  }
 
   usertrapret();
 }
@@ -200,7 +214,8 @@ devintr()
       plic_complete(irq);
 
     return 1;
-  } else if(scause == 0x8000000000000001L){
+  } 
+  else if(scause == 0x8000000000000001L){    // 定时器中断的定时代码在这
     // software interrupt from a machine-mode timer interrupt,
     // forwarded by timervec in kernelvec.S.
 
